@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.4.1/socket.io.min.js"></script>
+	</head>
+	<body>
+		<button onclick="pull()">Pull data</button>
+		<div id="output"></div>
+		<script>
+			var socket = io('ws://127.0.0.1:5000', { 
+				cors: { origin: '*'},
+				transports: ['websocket']
+			});
+
+
+			var outdiv = document.getElementById('output');
+			function write(e, desc) {
+				var p = document.createElement('p');
+				if (desc) {
+					p.textContent = desc + ': ' + JSON.stringify(e);
+				} else {
+					p.textContent = JSON.stringify(e);
+				}
+				outdiv.appendChild(p);
+				console.log(`received: ` + JSON.stringify(e));
+			}
+			
+			// function write(desc, e) {
+			// 	var p = document.createElement('p');
+			// 	p.textContent = JSON.stringify(e);
+			// 	outdiv.appendChild(p);
+			// 	console.log(`${desc}: ` + JSON.stringify(e));
+			// }
+
+			// setTimeout((e) => {
+			socket.emit('hey', '12fc');
+			socket.on('rundown', (e) => write(e));
+			socket.on('hey', (e) => write(e));
+			socket.on('new worker', (e) => write(e, 'new worker'));
+			socket.on('lost worker', (e) => write(e, 'lost worker'));
+			// }, 100);
+
+			function pull() {
+
+				socket.emit('hey', {'not': 'much'});
+			}
+			
+			// io.on('connection', (socket) => {
+			// 	console.log('a user connected');
+			// 	socket.on('disconnect', () => {
+			// 		console.log('user disconnected');
+			// 	});
+			// });			
+		</script>
+	</body>
+</html>

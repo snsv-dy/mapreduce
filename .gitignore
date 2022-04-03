@@ -1,0 +1,4 @@
+status/node_modules/
+status/build/
+__pycache__/
+package-lock.json

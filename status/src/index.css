@@ -1,0 +1,62 @@
+body > div {
+	/* display:block; */
+	/* height: 100% !important; */
+}
+
+.website {
+	display: flex;
+	align-items: stretch;
+	height: 100vh;
+}
+
+.left {
+	display: flex;
+	flex-direction: column;
+	justify-content: flex-start;
+	/* background: pink; */
+	flex-grow: 1;
+	flex-basis: 0;
+}
+
+.workers {
+	overflow: scroll;
+	flex-grow: 1;
+	flex-basis: 0;
+	/* flex-shrink: 1; */
+}
+
+.messages {
+	flex-grow: 1;
+	flex-basis: 0;
+	overflow: scroll;
+}
+
+.workers ul {
+	margin: 0;
+	padding: 0;
+	list-style-type: none;
+}
+
+li.active {
+	background: lightsalmon;
+}
+
+.workers li:hover {
+	background: lightgray;
+}
+
+.right {
+	display: block;
+	/* background: orange; */
+	/* border-left: 5px dashed red; */
+	padding-left: 10px;
+	box-shadow: -5px 0px 5px lightsalmon;
+	flex-grow: 1;
+	flex-basis: 0;
+}
+
+.blue {
+	width: 100px;
+	height: 100px;
+	background: blue;
+}
