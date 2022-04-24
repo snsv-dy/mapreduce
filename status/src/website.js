@@ -3,6 +3,7 @@ import React, { useContext, useEffect, useState} from 'react';
 // import ReactDOM from 'react-dom';
 // import SocketIO from "socket.io-client";
 import { socket, SocketContext } from './context/socket';
+import { io } from 'socket.io-client';
 
 function Test(props) {
 	const io = useContext(SocketContext);
@@ -30,13 +31,13 @@ function Test(props) {
 	}, []);
 
 	return (
-		""
+		<button onClick={() => io.emit('jobexec', '??')}>Execute job</button>
 	);
 }
 
 class Website extends React.Component {
 	constructor(props) {
-			super(props);
+		super(props);
 
 		var initial_workers = new Map();
 		// initial_workers.set()
@@ -49,6 +50,8 @@ class Website extends React.Component {
 			msgs: ['Not received'],
 			selectedWorker: 0
 		};
+
+		this.jobexec_impl = {impl: null};
 	}
 
 	writeSomething(data) {
@@ -168,6 +171,14 @@ class Website extends React.Component {
 				<div className="masterInfo">
 					<h1>Master of mapreduce</h1>
 					<h3>Listening on {this.state.master_address}</h3>
+					<Test 
+				writer={(e) => this.writeSomething(e)}
+				hey={(e) => this.writeSomething(e)} 
+				rundown={(e) => this.rundown(e)}
+				newworker={(e) => this.newWorker(e)}
+				lostworker={(e) => this.lostWorker(e)}
+				msgworker={(e) => this.msgFromWorker(e)}
+			/>
 				</div>
 				<p>Connected workers:</p>
 				<hr />
@@ -181,15 +192,6 @@ class Website extends React.Component {
 				</div>
 			</div>
 			{right}
-			<Test 
-				writer={(e) => this.writeSomething(e)}
-				hey={(e) => this.writeSomething(e)} 
-				rundown={(e) => this.rundown(e)}
-				newworker={(e) => this.newWorker(e)}
-				lostworker={(e) => this.lostWorker(e)}
-				msgworker={(e) => this.msgFromWorker(e)}
-				
-			/>
 		</div>
 		)
 	}

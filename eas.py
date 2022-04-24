@@ -7,7 +7,7 @@ app.wsgi_app = socketio.WSGIApp(sio, app.wsgi_app)
 
 # ... Socket.IO and Flask handler functions ...
 
-from TcpServerPart import rundown
+from TcpServerPart import rundown, execute_job
 
 @sio.event
 def connect(sid, environ, auth):
@@ -17,6 +17,11 @@ def connect(sid, environ, auth):
 @sio.event
 def disconnect(sid):
 	print("disconnected")
+
+@sio.event
+def jobexec(sid, data):
+	print("got jobexec data ", data)
+	execute_job()
 
 @app.route('/')
 def index():
