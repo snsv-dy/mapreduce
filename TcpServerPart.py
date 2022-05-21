@@ -25,7 +25,7 @@ class Job:
 	def __init__(self):
 		self.name = 'MapReduceTest'
 		self._parts_definition = list(range(12))
-		self.parts = list(range(1))
+		self.parts = list(range(12))
 		self.assigned = []
 		self.done = []
 
