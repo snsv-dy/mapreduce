@@ -1,4 +1,6 @@
 # Master
+import math
+import os
 import select
 import socket as so
 import time
@@ -21,16 +23,118 @@ def remove_client(clients, client):
 	clients_lock.release()
 	sio.emit('lost worker', client.describe())
 
+class Task:
+	def __init__(self, id, start=0, length=1024):
+		self.id = id
+		self.input_file = 'data.txt'
+		self.file_start = start
+		self.file_length = length
+		self.assigned = ''
+		self.output_file = ''
+		self.stage = 'map'
+
+	def describe(self):
+		return {
+			"input_file": self.input_file,
+			"file_start": self.file_start,
+			"file_length": self.file_length,
+			"output_file": self.output_file,
+			"stage": self.stage
+		}
+
+	def getname(self):
+		return self.input_file + "_" + str(self.id)
+
 class Job:
+	CHUNK_SIZE = 600
+	MAP = 0
+	SHUFFLE = 1
+	REDUCE = 2
 	def __init__(self):
+		# Map part first
 		self.name = 'MapReduceTest'
-		self._parts_definition = list(range(12))
-		self.parts = list(range(12))
+		self.input_file = 'data.txt'
+		self.n_parts = 0
+		self.parts = []
 		self.assigned = []
 		self.done = []
+		self.stage = Job.MAP
+
+		self.prepareFile()
+
+	def prepareFile(self):
+		if self.stage == Job.MAP:
+			file_size = os.stat(self.input_file).st_size
+			self.n_parts = math.ceil(file_size / Job.CHUNK_SIZE)
+			self.parts = []
+
+			for i in range(self.n_parts):
+				task = Task(i, i*Job.CHUNK_SIZE, Job.CHUNK_SIZE)
+				task.input_file = self.input_file
+				self.parts.append(task)
+		elif self.stage == Job.SHUFFLE:
+			mapped_keys = self.shuffle()
+			try:
+				os.mkdir("output/reduce")
+			except:
+				pass
+
+			# Prepare reduce tasks
+			self.done = []
+			self.parts = []
+			for i, mk in enumerate(mapped_keys):
+				task = Task(i, 0, -1)
+				task.input_file = "output/shuffle/key" + str(i) + ".txt"
+				task.stage = "reduce"
+				task.output_file = "output/reduce/key" + str(i) + ".txt"
+				self.parts.append(task)
+
+			self.stage = Job.REDUCE
+			self.n_parts = len(self.parts)
+
+	def shuffle(self):
+		complete_map = {}
+		for com_task in self.done:
+			with open(com_task.output_file, "r") as f:
+				data = json.load(f)
+				for k, v in data.items():
+					if k not in complete_map:
+						complete_map[k] = v
+					else:
+						complete_map[k] += v
+		
+		i = 0
+		try:
+			os.mkdir("output/shuffle")
+		except:
+			pass
+
+		for k, v in complete_map.items():
+			with open("output/shuffle/key" + str(i) + ".txt", "w") as f:
+				json.dump({
+					"key": k,
+					"values": v
+				}, f)
+			i += 1
+
+		return complete_map.keys()
+
+	def combine_results(self):
+		complete_map = {}
+		for com_task in self.done:
+			with open(com_task.output_file, "r") as f:
+				data = json.load(f)
+				for k, v in data.items():
+					if k not in complete_map:
+						complete_map[k] = v
+					else:
+						complete_map[k] += v
+		
+		with open("output/" + self.input_file + "_reduced.txt", "w") as f:
+			json.dump(complete_map, f)
 
 	def finished(self):
-		return len(self.done) == 12
+		return len(self.done) == self.n_parts
 
 	def tasksAvailable(self):
 		return len(self.parts) > 0
@@ -43,22 +147,31 @@ class Job:
 			return ret
 		return None
 
-	def assignTask(self, partn, client):
-		self.assigned.append((partn, client))
+	def assignTask(self, task):
+		self.assigned.append(task)
 		print("TASK ASSIGNED")
 
-	def releaseTask(self, client):
+	def releaseTask(self, task):
 		# Client disconnected and haven't completed the task.
-		if len(self.assigned) > 0:
-			task = next(i for i in self.assigned if i[1] == client)
+		# if len(self.assigned) > 0:
+			# task = next(i for i in self.assigned if i.assigned == client)
+			# task.assigned = ''
 			# Put task back into available list
-			self.parts.append(task[0])
-			self.assigned.remove(task)
-
-	def taskDone(self, client):
-		task = next(i for i in self.assigned if i[1] == client)
-		self.done.append(task[0])
+		self.parts.append(task)
 		self.assigned.remove(task)
+
+	def taskDone(self, task):
+		# task = next(i for i in self.assigned if i[1] == client)
+		self.done.append(task)
+		self.assigned.remove(task)
+
+		if len(self.done) == self.n_parts and len(self.parts) == 0:
+			if self.stage == Job.MAP:
+				self.stage = Job.SHUFFLE
+				self.prepareFile()
+			else:
+				self.combine_results() # make this optional
+				# pass # Koniec roboty ツ
 
 	def debug(self):
 		return str(self.parts) + ", " + str(self.assigned) + ", " + str(self.done)
@@ -77,14 +190,11 @@ class SlaveHandler(Thread):
 		self.addr = addr
 		self.s = mysocket
 		self.remover = remover
-		self.status = 'Ready'
-		self.job = None
-		self.job_role = ''
-		self.progress = 0.0
-		self.type = SlaveHandler.ROLE_UNKNOWN
+		self.status = 'Initializing'
+		self.directory = ''
+		self.task = None
 		self.send_queue = []
 		self.last_ping = SlaveHandler.PingInterval + 1
-		self.latency = 0
 
 	def read(self):
 		global active_job
@@ -97,27 +207,19 @@ class SlaveHandler(Thread):
 
 		message = json.loads(rec)
 		command = message.get('command')
-		if command == str(ACK_TYPE):
-			if message['data'] == 'part number':
-				self.status = 'Busy'
-				active_job.assignTask(self.job_role, self.addr)
-				
-				print("-- TASK ACK --")
-				print(active_job.debug())
-				# emit to front and send exec
-
+		if command == 'initial info':
+			self.directory = message.get('directory')
+			self.status = 'Ready'
 		elif command == 'error':
 			if message['type'] == 'assign to busy attempt':
 				self.status = 'Busy'
 
 		elif command == 'pong':
-			self.latency = message['time'] - self.last_ping
-			self.progress = message['progress']
+			pass
 
 		elif command == 'finish':
-			active_job.taskDone(self.addr)
-			self.job_role = None
-			self.progress = 0
+			active_job.taskDone(self.task)
+			self.task = None
 			self.status = 'Ready'
 			print("-- TASK FINISHED --")
 			print(active_job.debug())
@@ -147,13 +249,17 @@ class SlaveHandler(Thread):
 				'time': cur
 			}))
 
-	def sendJobRequest(self, active_job, part):
-		self.job = active_job
-		self.job_role = part
+	def sendJobRequest(self, task):
+		if task.stage == "map":
+			task.output_file = self.directory + '/' + task.getname()
+		task.assigned = self.addr
+		self.task = task
 		self.send_queue.append(json.dumps({
-			'command': 'part number',
-			'data': part
+			'command': 'task',
+			'task_params': self.task.describe()
 		}))
+
+		self.status = 'Busy'
 
 	def run(self):
 		pass
@@ -202,9 +308,9 @@ def assign_tasks():
 		jobwas = True
 		c = get_free_client()
 		if c is not None:
-			part = active_job.getFreePart()
-			c.status = 'Pending'
-			c.sendJobRequest(active_job, part)
+			task = active_job.getFreePart()
+			c.sendJobRequest(task)
+			active_job.assignTask(task)
 		else:
 			break
 	if jobwas:
@@ -224,12 +330,11 @@ def get_free_client():
 def deleteClient(client):
 	sio.emit('lost worker', client.describe())
 	global active_job
-	if active_job is not None:
-		active_job.releaseTask(client.addr)
-	del clients[client.addr]
-	if active_job is not None:
+	if active_job is not None and client.task is not None:
+		active_job.releaseTask(client.task)
 		print("-- TASKS RELEASED --")
 		print(active_job.debug())
+	del clients[client.addr]
 
 # Thread
 def sockets():
@@ -242,8 +347,8 @@ def sockets():
 
 	remove_client_bound = partial(remove_client, clients)
 
-	# global active_job
-	# active_job = Job()
+	global active_job
+	active_job = Job()
 
 	while True:
 		pot_rec = [i.s for k, i in clients.items()] + [server]
@@ -260,7 +365,6 @@ def sockets():
 				print(f'Client {str_address} connected')
 				handler = SlaveHandler(str_address, client_socket, remove_client_bound)
 				clients[str_address] = handler
-				print(str(clients.keys()))
 				sio.emit('new worker', handler.describe())
 			else:
 				str_addr = str(r.getpeername())
@@ -270,8 +374,6 @@ def sockets():
 					if handler.status == 'ForRemove':
 						r.close()
 						deleteClient(handler)
-						# sio.emit('lost worker', handler.describe())
-						# del clients[str_addr]
 				else:
 					print(f"No handler for receiving socket {r.getpeername()}")
 

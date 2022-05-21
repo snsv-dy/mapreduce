@@ -3,6 +3,7 @@ import time
 import socket as so
 import struct
 import json
+from slaveExecutor import Executor
 
 MSGLEN = 5
 
@@ -93,10 +94,12 @@ if __name__ == '__main__':
 	socket = so.socket(so.AF_INET, so.SOCK_STREAM)
 	socket.connect(('localhost', 32080))
 	s = MySocket(socket)
-	print("Write end to close connection: ")
+	# Wysyłanie informacji o folderze
+	s.send(json.dumps({
+		'command': 'initial info',
+		'directory': 'output'
+	}))
 	worker_thread = None
-	part_number = None
-	dummy_progress = 0.0
 	while True:
 		# inn = input()
 		# s.send(inn)
@@ -105,34 +108,52 @@ if __name__ == '__main__':
 		# print('got ', s.receive())
 		pack = json.loads(s.receive())
 		command = pack.get('command')
-		if command == 'part number':
-			if worker_thread == None and part_number == None:
-				part_number = pack.get('data')
-				# Start work here immediately
+		if command == 'task':
+			if worker_thread == None:
+				params = pack.get('task_params')
+			# 	"input_file": 'data.txt',
+			# "file_start": self.file_start,
+			# "file_length": self.file_length,
+			# "output_file": self.output_file
+				worker_thread = Executor(params.get('input_file'), 
+					params.get('output_file'), 
+					params.get('file_start'), 
+					params.get('file_length'),
+					params.get('stage'))
+				worker_thread.start()
+				worker_thread.join()
+
 				s.send(json.dumps({
-					'command': str(ACK_TYPE),
-					'data': 'part number'
+					'command': 'finish'
 					}))
+				worker_thread = None
+				# part_number = pack.get('data')
+				# # Start work here immediately
+				# s.send(json.dumps({
+				# 	'command': str(ACK_TYPE),
+				# 	'data': 'part number'
+				# 	}))
 			else:
 				s.send(json.dumps({
 					'command': 'error',
 					'type': 'assign to busy attempt',
 					'data': 'Worker has already assigned work.'
 					}))
-			print(f'part number: {part_number}')
+			print(f'task:')
 		# elif command == 'execute':
 		# 	pass
 		elif command == 'ping':
-			if part_number is not None:
-				dummy_progress += 50.0
 			t = int(time.time() * 1000)
-			s.send(json.dumps({'command': 'pong', 'time': t, 'progress': dummy_progress})) 
-			if dummy_progress == 100.0:
-				# dummy finish work
-				s.send(json.dumps({'command': 'finish', 'data': 'part' + str(part_number) + '.txt'}))
-				dummy_progress = 0.0
-				part_number = None
-				worker_thread = None
+			s.send(json.dumps({'command': 'pong', 'time': t})) 
+			# if part_number is not None:
+			# 	dummy_progress += 50.0
+			# t = int(time.time() * 1000)
+			# if dummy_progress == 100.0:
+			# 	# dummy finish work
+			# 	s.send(json.dumps({'command': 'finish', 'data': 'part' + str(part_number) + '.txt'}))
+			# 	dummy_progress = 0.0
+			# 	part_number = None
+			# 	worker_thread = None
 		elif command == 'die':
 			# Make that client tries to reconnect after connection was lost.
 			break
