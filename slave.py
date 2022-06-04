@@ -116,6 +116,7 @@ if __name__ == '__main__':
 			# "file_length": self.file_length,
 			# "output_file": self.output_file
 				worker_thread = Executor(params.get('input_file'), 
+					params.get('implementation_file'),
 					params.get('output_file'), 
 					params.get('file_start'), 
 					params.get('file_length'),

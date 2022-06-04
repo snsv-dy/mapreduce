@@ -1,15 +1,32 @@
 import json
 from threading import Thread
 from time import sleep
+import importlib
+
+def attach_emit(base):
+	class Ab(base):
+		def __init__(self):
+			super().__init__()
+			self.map_result = {}
+
+		def emit(self, k, v):
+			if k in self.map_result:
+				self.map_result[k].append(v)
+			else:
+				self.map_result[k] = [v]
+
+	print('emit attached')
+	return Ab
 
 class Executor(Thread):
 	STATE_IDLE = 0
 	STATE_WORKING = 1
 	STATE_FINISHED = 2
 
-	def __init__(self, input_file, output_file, start, length, stage):
+	def __init__(self, input_file, implementation_file, output_file, start, length, stage):
 		super().__init__()
 		self.input_file = input_file
+		self.implementation_file = implementation_file
 		self.file_start = start
 		self.file_length = length
 		self.output_file = output_file
@@ -18,6 +35,7 @@ class Executor(Thread):
 		self.state = Executor.STATE_IDLE
 		print("Executor init: ")
 		print("input_file", self.input_file)
+		print("implementation", self.implementation_file)
 		print("start", self.file_start)
 		print("length", self.file_length)
 		print("output_file", self.output_file)
@@ -35,30 +53,24 @@ class Executor(Thread):
 			string = f.read(self.file_length) if self.file_length != -1 else f.read()
 			# print("Opened file")
 			# print(string)
+			impl = importlib.import_module(self.implementation_file)
+			impl = importlib.reload(impl)
+			impl = getattr(impl, dir(impl)[0]) # Pierwszy alfabetycznie
 
-			map_result = {}
-			def emit(k, v):
-				if k in map_result:
-					map_result[k].append(v)
-				else:
-					map_result[k] = [v]
+			impl = importlib.import_module(self.implementation_file)
+			impl = getattr(impl, dir(impl)[0]) # Pierwszy alfabetycznie obiekt.
+			impl = attach_emit(impl)
 
-			def map(k, v):
-				import re
-				for i in re.split('\s', v):
-					emit(i, "1")
-
-			def reduce(key, values):
-				emit(key, len(values))
+			impl_obj = impl()
 
 			if self.stage == "map":
-				map(self.input_file, string)
+				impl_obj.map_(self.input_file, string)
 			else:
 				jdata = json.loads(string)
-				reduce(jdata['key'], jdata['values'])
+				impl_obj.reduce_(jdata['key'], jdata['values'])
 
 			with open(self.output_file, "w") as of:
-				json.dump(map_result, of)
+				json.dump(impl_obj.map_result, of)
 
 		self.state = Executor.STATE_FINISHED
 

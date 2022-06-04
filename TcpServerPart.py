@@ -26,7 +26,8 @@ def remove_client(clients, client):
 class Task:
 	def __init__(self, id, start=0, length=1024):
 		self.id = id
-		self.input_file = 'data.txt'
+		self.input_file = ''
+		self.implementation_file = ''
 		self.file_start = start
 		self.file_length = length
 		self.assigned = ''
@@ -36,6 +37,7 @@ class Task:
 	def describe(self):
 		return {
 			"input_file": self.input_file,
+			"implementation_file": self.implementation_file,
 			"file_start": self.file_start,
 			"file_length": self.file_length,
 			"output_file": self.output_file,
@@ -46,14 +48,16 @@ class Task:
 		return self.input_file + "_" + str(self.id)
 
 class Job:
-	CHUNK_SIZE = 600
+	CHUNK_SIZE = 14096
 	MAP = 0
 	SHUFFLE = 1
 	REDUCE = 2
+	COMPLETED = 3
 	def __init__(self):
 		# Map part first
 		self.name = 'MapReduceTest'
 		self.input_file = 'data.txt'
+		self.implementation_file = 'map_functor'
 		self.n_parts = 0
 		self.parts = []
 		self.assigned = []
@@ -71,6 +75,8 @@ class Job:
 			for i in range(self.n_parts):
 				task = Task(i, i*Job.CHUNK_SIZE, Job.CHUNK_SIZE)
 				task.input_file = self.input_file
+				task.implementation_file = self.implementation_file
+				task.output_file = 'output/' + task.getname()
 				self.parts.append(task)
 		elif self.stage == Job.SHUFFLE:
 			mapped_keys = self.shuffle()
@@ -85,6 +91,7 @@ class Job:
 			for i, mk in enumerate(mapped_keys):
 				task = Task(i, 0, -1)
 				task.input_file = "output/shuffle/key" + str(i) + ".txt"
+				task.implementation_file = self.implementation_file
 				task.stage = "reduce"
 				task.output_file = "output/reduce/key" + str(i) + ".txt"
 				self.parts.append(task)
@@ -171,10 +178,12 @@ class Job:
 				self.prepareFile()
 			else:
 				self.combine_results() # make this optional
+				self.stage = Job.COMPLETED
 				# pass # Koniec roboty ツ
 
 	def debug(self):
-		return str(self.parts) + ", " + str(self.assigned) + ", " + str(self.done)
+		return ""
+		# return str(self.parts) + ", " + str(self.assigned) + ", " + str(self.done)
 
 	def __str__(self):
 		return self.name
@@ -250,8 +259,6 @@ class SlaveHandler(Thread):
 			}))
 
 	def sendJobRequest(self, task):
-		if task.stage == "map":
-			task.output_file = self.directory + '/' + task.getname()
 		task.assigned = self.addr
 		self.task = task
 		self.send_queue.append(json.dumps({
@@ -348,7 +355,7 @@ def sockets():
 	remove_client_bound = partial(remove_client, clients)
 
 	global active_job
-	active_job = Job()
+	# active_job = Job()
 
 	while True:
 		pot_rec = [i.s for k, i in clients.items()] + [server]
@@ -388,6 +395,9 @@ def sockets():
 					# sio.emit('lost worker', handler.describe())
 			else:
 				print(f"No handler for sending socket {s.getpeername()}")
+
+		if active_job is not None and active_job.stage == Job.COMPLETED:
+			active_job = None
 
 		for k, c in clients.items():
 			c.ping()
