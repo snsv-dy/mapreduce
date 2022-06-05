@@ -1,4 +1,5 @@
 # Master
+import random
 import math
 import os
 import select
@@ -53,9 +54,10 @@ class Job:
 	SHUFFLE = 1
 	REDUCE = 2
 	COMPLETED = 3
+	OUT_DIR = 'output/'
 	def __init__(self):
 		# Map part first
-		self.name = 'MapReduceTest'
+		self.id = '-1'
 		self.input_file = 'data.txt'
 		self.implementation_file = 'map_functor'
 		self.n_parts = 0
@@ -64,9 +66,20 @@ class Job:
 		self.done = []
 		self.stage = Job.MAP
 
+		self.genId()
 		self.prepareFile()
+	
+	def genId(self):
+		self.id = str(int(time.time())) + str(random.randint(100, 999)) + self.implementation_file
+		return self.id
 
 	def prepareFile(self):
+		# Creating folder for job
+		try:
+			os.mkdir(Job.OUT_DIR + self.id)
+		except:
+			pass
+
 		if self.stage == Job.MAP:
 			file_size = os.stat(self.input_file).st_size
 			self.n_parts = math.ceil(file_size / Job.CHUNK_SIZE)
@@ -76,12 +89,12 @@ class Job:
 				task = Task(i, i*Job.CHUNK_SIZE, Job.CHUNK_SIZE)
 				task.input_file = self.input_file
 				task.implementation_file = self.implementation_file
-				task.output_file = 'output/' + task.getname()
+				task.output_file = Job.OUT_DIR + self.id + '/' + task.getname()
 				self.parts.append(task)
 		elif self.stage == Job.SHUFFLE:
 			mapped_keys = self.shuffle()
 			try:
-				os.mkdir("output/reduce")
+				os.mkdir(Job.OUT_DIR + self.id + "/reduce")
 			except:
 				pass
 
@@ -90,10 +103,10 @@ class Job:
 			self.parts = []
 			for i, mk in enumerate(mapped_keys):
 				task = Task(i, 0, -1)
-				task.input_file = "output/shuffle/key" + str(i) + ".txt"
+				task.input_file = Job.OUT_DIR + self.id + "/shuffle/key" + str(i) + ".txt"
 				task.implementation_file = self.implementation_file
 				task.stage = "reduce"
-				task.output_file = "output/reduce/key" + str(i) + ".txt"
+				task.output_file = Job.OUT_DIR + self.id + "/reduce/key" + str(i) + ".txt"
 				self.parts.append(task)
 
 			self.stage = Job.REDUCE
@@ -112,12 +125,12 @@ class Job:
 		
 		i = 0
 		try:
-			os.mkdir("output/shuffle")
+			os.mkdir(Job.OUT_DIR + self.id + "/shuffle")
 		except:
 			pass
 
 		for k, v in complete_map.items():
-			with open("output/shuffle/key" + str(i) + ".txt", "w") as f:
+			with open(Job.OUT_DIR + self.id + "/shuffle/key" + str(i) + ".txt", "w") as f:
 				json.dump({
 					"key": k,
 					"values": v
@@ -137,7 +150,7 @@ class Job:
 					else:
 						complete_map[k] += v
 		
-		with open("output/" + self.input_file + "_reduced.txt", "w") as f:
+		with open(Job.OUT_DIR + self.id + "/" + self.input_file + "_reduced.txt", "w") as f:
 			json.dump(complete_map, f)
 
 	def finished(self):
@@ -179,6 +192,9 @@ class Job:
 			else:
 				self.combine_results() # make this optional
 				self.stage = Job.COMPLETED
+				with open(Job.OUT_DIR + self.id + "/finished.txt", 'w') as f:
+					# f.write()
+					pass
 				# pass # Koniec roboty ツ
 
 	def debug(self):
@@ -186,7 +202,7 @@ class Job:
 		# return str(self.parts) + ", " + str(self.assigned) + ", " + str(self.done)
 
 	def __str__(self):
-		return self.name
+		return self.id
 	# def 
 
 class SlaveHandler(Thread):
@@ -297,16 +313,35 @@ def rundown():
 		'clients': [c.describe() for k, c in clients.items()]
 	}
 
-def execute_job():
+def execute_job(implementation_file, data_file):
 	print("Job execed")
 	global active_job
 	if active_job == None:
+		# Correctness of implementation will be checked in worker
 		active_job = Job()
+		active_job.input_file = data_file
+		active_job.implementation_file = implementation_file
 		assign_tasks()
+		return {'id': active_job.id, 'path': Job.OUT_DIR + active_job.id} # id of the job or something
+	else:
+		return {'error': 'server is busy with other work, try again later'}
+
 	# if there are no clients available, wait for them 
 	# signal all ready clients to exec job
 
 	# later if new clients will connect and there are jobs remaining, assign jobs to clients
+
+def check_job_status(id):
+	global active_job
+	if active_job != None and active_job.id == id:
+		return {'id': id, 'status': ["Map", "Shuffle", "Reduce", "Finished"][active_job.stage], 'path': Job.OUT_DIR + active_job.id}
+	else:
+		try:
+			with open(Job.OUT_DIR + id + "/finished.txt"):
+				pass
+			return {'id': id, 'status': 'Finished', 'path': Job.OUT_DIR + id}
+		except:
+			return {'error': f'Cant find job with id {id}'}
 
 def assign_tasks():
 	global active_job

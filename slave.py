@@ -121,8 +121,9 @@ if __name__ == '__main__':
 					params.get('file_start'), 
 					params.get('file_length'),
 					params.get('stage'))
-				worker_thread.start()
-				worker_thread.join()
+				worker_thread.run()
+				# worker_thread.start()
+				# worker_thread.join()
 
 				s.send(json.dumps({
 					'command': 'finish'

@@ -56,9 +56,6 @@ class Executor(Thread):
 			impl = importlib.import_module(self.implementation_file)
 			impl = importlib.reload(impl)
 			impl = getattr(impl, dir(impl)[0]) # Pierwszy alfabetycznie
-
-			impl = importlib.import_module(self.implementation_file)
-			impl = getattr(impl, dir(impl)[0]) # Pierwszy alfabetycznie obiekt.
 			impl = attach_emit(impl)
 
 			impl_obj = impl()

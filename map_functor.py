@@ -18,11 +18,14 @@ class MapReduce:
 class ACountWords(MapReduce):
 	def map_(self, k, v):
 		import re
+		# import time
 		for i in re.split('\s', v):
 			self.emit(i, "1")
+		# time.sleep(0.5)
 
 	def reduce_(self, key, values):
 		self.emit(key, len(values))
+		# time.sleep(0.5)
 
 
 class CountWords(MapReduce):
