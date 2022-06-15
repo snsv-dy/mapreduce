@@ -121,13 +121,31 @@ if __name__ == '__main__':
 					params.get('file_start'), 
 					params.get('file_length'),
 					params.get('stage'))
-				worker_thread.run()
+				# worker_thread.run()
+				errorHappened = False
+				try:
+					worker_thread.run()
+				except FileNotFoundError:
+					print("Exeption input")
+					errorHappened = True
+				except ModuleNotFoundError:
+					print("Exception module")
+					errorHappened = True
+				except:
+					print("Something else")
+					errorHappened = True
 				# worker_thread.start()
 				# worker_thread.join()
-
-				s.send(json.dumps({
-					'command': 'finish'
-					}))
+				if errorHappened:
+					s.send(json.dumps({
+						'command': 'error',
+						'type': 'provided params',
+						'data': 'Execution with provided parameters resulted in an error.'
+						}))
+				else:
+					s.send(json.dumps({
+						'command': 'finish'
+						}))
 				worker_thread = None
 				# part_number = pack.get('data')
 				# # Start work here immediately

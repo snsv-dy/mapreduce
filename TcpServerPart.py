@@ -25,7 +25,7 @@ def remove_client(clients, client):
 	sio.emit('lost worker', client.describe())
 
 class Task:
-	def __init__(self, id, start=0, length=1024):
+	def __init__(self, id, jobid, start=0, length=1024):
 		self.id = id
 		self.input_file = ''
 		self.implementation_file = ''
@@ -34,6 +34,7 @@ class Task:
 		self.assigned = ''
 		self.output_file = ''
 		self.stage = 'map'
+		self.job = jobid
 
 	def describe(self):
 		return {
@@ -86,7 +87,7 @@ class Job:
 			self.parts = []
 
 			for i in range(self.n_parts):
-				task = Task(i, i*Job.CHUNK_SIZE, Job.CHUNK_SIZE)
+				task = Task(i, self.id, i*Job.CHUNK_SIZE, Job.CHUNK_SIZE)
 				task.input_file = self.input_file
 				task.implementation_file = self.implementation_file
 				task.output_file = Job.OUT_DIR + self.id + '/' + task.getname()
@@ -102,7 +103,7 @@ class Job:
 			self.done = []
 			self.parts = []
 			for i, mk in enumerate(mapped_keys):
-				task = Task(i, 0, -1)
+				task = Task(i, self.id, 0, -1)
 				task.input_file = Job.OUT_DIR + self.id + "/shuffle/key" + str(i) + ".txt"
 				task.implementation_file = self.implementation_file
 				task.stage = "reduce"
@@ -181,22 +182,31 @@ class Job:
 		self.assigned.remove(task)
 
 	def taskDone(self, task):
-		# task = next(i for i in self.assigned if i[1] == client)
-		self.done.append(task)
-		self.assigned.remove(task)
+		if self.id == task.job:
+			# task = next(i for i in self.assigned if i[1] == client)
+			self.done.append(task)
+			self.assigned.remove(task)
 
-		if len(self.done) == self.n_parts and len(self.parts) == 0:
-			if self.stage == Job.MAP:
-				self.stage = Job.SHUFFLE
-				self.prepareFile()
-			else:
-				self.combine_results() # make this optional
-				self.stage = Job.COMPLETED
-				with open(Job.OUT_DIR + self.id + "/finished.txt", 'w') as f:
-					# f.write()
-					pass
-				# pass # Koniec roboty ツ
+			if len(self.done) == self.n_parts and len(self.parts) == 0:
+				if self.stage == Job.MAP:
+					self.stage = Job.SHUFFLE
+					self.prepareFile()
+				else:
+					self.combine_results() # make this optional
+					self.stage = Job.COMPLETED
+					with open(Job.OUT_DIR + self.id + "/finished.txt", 'w') as f:
+						# f.write()
+						pass
+					# pass # Koniec roboty ツ
+		# else:
+		# 	print("te dudy nie były dudy {self.id}, {task.id}s")
 
+	def terminate(self, cause='Cause unknown. Check input file path and implementation for errors.'):
+		with open(Job.OUT_DIR + self.id + "/error.txt", "w") as f:
+			f.write(cause)
+			f.write('\n')
+
+					
 	def debug(self):
 		return ""
 		# return str(self.parts) + ", " + str(self.assigned) + ", " + str(self.done)
@@ -238,6 +248,9 @@ class SlaveHandler(Thread):
 		elif command == 'error':
 			if message['type'] == 'assign to busy attempt':
 				self.status = 'Busy'
+			elif message['type'] == 'provided params':
+				terminate_current_job()
+				self.status = 'Ready'
 
 		elif command == 'pong':
 			pass
@@ -312,6 +325,13 @@ def rundown():
 		'master_address': f'{master_addr[0]}:{master_addr[1]}',
 		'clients': [c.describe() for k, c in clients.items()]
 	}
+def terminate_current_job():
+	global active_job
+	if active_job == None:
+		print("Attempted to terminate nonexistent job")
+	else:
+		active_job.terminate()
+		active_job = None
 
 def execute_job(implementation_file, data_file):
 	print("Job execed")
@@ -336,12 +356,22 @@ def check_job_status(id):
 	if active_job != None and active_job.id == id:
 		return {'id': id, 'status': ["Map", "Shuffle", "Reduce", "Finished"][active_job.stage], 'path': Job.OUT_DIR + active_job.id}
 	else:
+		notfinished = False
 		try:
 			with open(Job.OUT_DIR + id + "/finished.txt"):
 				pass
 			return {'id': id, 'status': 'Finished', 'path': Job.OUT_DIR + id}
-		except:
-			return {'error': f'Cant find job with id {id}'}
+		except FileNotFoundError:
+			notfinished = True
+			
+		if notfinished:
+			try:
+				with open(Job.OUT_DIR + id + "/error.txt") as f:
+					return {'id': id, 'status': 'Error', 'path': Job.OUT_DIR + id, 'cause': f.read()}
+			except:
+				pass
+
+		return {'error': f'Cant find job with id {id}'}
 
 def assign_tasks():
 	global active_job
