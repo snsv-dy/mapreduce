@@ -27,7 +27,6 @@ class ACountWords(MapReduce):
 	def reduce_(self, key, values):
 		self.emit(key, len(values))
 		# time.sleep(1)
-		# self.emit(key, 'mario')
 		# time.sleep(0.5)
 
 

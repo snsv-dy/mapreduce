@@ -59,16 +59,16 @@ class Job:
 	def __init__(self):
 		# Map part first
 		self.id = '-1'
-		self.input_file = 'data.txt'
-		self.implementation_file = 'map_functor'
+		self.input_file = ''
+		self.implementation_file = ''
 		self.n_parts = 0
 		self.parts = []
 		self.assigned = []
 		self.done = []
 		self.stage = Job.MAP
 
-		self.genId()
-		self.prepareFile()
+		# self.genId()
+		# self.prepareFile()
 	
 	def genId(self):
 		self.id = str(int(time.time())) + str(random.randint(100, 999)) + self.implementation_file
@@ -341,6 +341,13 @@ def execute_job(implementation_file, data_file):
 		active_job = Job()
 		active_job.input_file = data_file
 		active_job.implementation_file = implementation_file
+		active_job.genId()
+		try:
+			active_job.prepareFile()
+		except:
+			active_job.terminate(cause="Input file problem.")
+			active_job = None
+			return {'error': 'Problem with input file. (Check if it exists).'}
 		assign_tasks()
 		return {'id': active_job.id, 'path': Job.OUT_DIR + active_job.id} # id of the job or something
 	else:
